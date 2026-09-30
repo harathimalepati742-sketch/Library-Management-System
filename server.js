@@ -15,6 +15,15 @@ if (!db.prepare("SELECT 1 FROM users WHERE role='librarian'").get())
   db.prepare('INSERT INTO users(name,username,password,role) VALUES(?,?,?,?)')
     .run('Librarian', 'librarian', bcrypt.hashSync('admin123', 10), 'librarian');
 
+// ---------- demo seed data (runs when the DB is empty, e.g. after a Render restart) ----------
+if (!db.prepare('SELECT 1 FROM books').get()) {
+  const ib = db.prepare('INSERT INTO books(title,author,section,total,available) VALUES(?,?,?,?,?)');
+  [['Clean Code', 'Robert Martin', 'Technology', 3], ['Java: The Complete Reference', 'Herbert Schildt', 'Technology', 2],
+   ['Wings of Fire', 'A.P.J. Abdul Kalam', 'Biography', 2], ['The Alchemist', 'Paulo Coelho', 'Fiction', 4],
+   ['A Brief History of Time', 'Stephen Hawking', 'Science', 2]].forEach(b => ib.run(b[0], b[1], b[2], b[3], b[3]));
+  db.prepare("INSERT INTO users(name,username,password,role) VALUES('Demo Student','student1',?,'student')").run(bcrypt.hashSync('student123', 10));
+}
+
 // ---------- NoSQL (MongoDB): activity log ----------
 let logs = null;
 MongoClient.connect(process.env.MONGO_URI || 'mongodb://localhost:27017')
@@ -112,4 +121,4 @@ app.get('/api/borrowals', auth('librarian'), (_, res) => res.json(db.prepare(
 app.get('/api/logs', auth('librarian'), async (_, res) =>
   res.json(logs ? await logs.find().sort({ at: -1 }).limit(30).toArray() : []));
 
-app.listen(3000, () => console.log('Running at http://localhost:3000'));
+app.listen(process.env.PORT || 3000, () => console.log('Server running'));
