@@ -1,0 +1,46 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Library Management</title><link rel="stylesheet" href="style.css"></head><body>
+<header><h1>📚 Library Management</h1><span id="who"></span><button id="out" hidden onclick="logout()">Logout</button></header>
+<main id="app"></main>
+<script>
+let token = localStorage.t, user = JSON.parse(localStorage.u || 'null');
+const $ = s => document.querySelector(s), v = id => $('#' + id).value;
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const tbl = (h, rows) => '<table><tr>' + h.map(x => `<th>${x}</th>`).join('') + '</tr>' + rows.map(r => '<tr>' + r.map(c => `<td>${c}</td>`).join('') + '</tr>').join('') + '</table>';
+async function api(p, m = 'GET', b) {
+  const r = await fetch('/api/' + p, { method: m, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: b ? JSON.stringify(b) : undefined });
+  const d = await r.json(); if (!r.ok) { alert(d.error); throw d.error; } return d;
+}
+function logout() { localStorage.clear(); token = user = null; render(); }
+async function login() {
+  const d = await api('login', 'POST', { username: v('u'), password: v('p') });
+  token = localStorage.t = d.token; user = d.user; localStorage.u = JSON.stringify(user); render();
+}
+async function act(p, m = 'POST', b) { const r = await api(p, m, b); if (r.msg) alert(r.msg); render(); }
+const addBook = () => act('books', 'POST', { title: v('bt'), author: v('ba'), section: v('bs'), total: v('bn') });
+const addStu = () => act('students', 'POST', { name: v('sn'), username: v('su'), password: v('sp') });
+const del = (p, id) => confirm('Remove?') && act(p + '/' + id, 'DELETE');
+
+async function student() {
+  const [books, my] = await Promise.all([api('books'), api('my')]);
+  $('#app').innerHTML = `<p class="card">⭐ Reward points: <b>${my.points}</b><br>Return on/before due date = +10 points · Late = ₹2 fine per day</p><h2>Books</h2>` +
+    tbl(['Title', 'Author', 'Section', 'Available', ''], books.map(b => [esc(b.title), esc(b.author), esc(b.section), b.available, b.available ? `<button onclick="act('borrow/${b.id}')">Borrow</button>` : '—'])) +
+    '<h2>My borrowals</h2>' + tbl(['Book', 'Due', 'Returned', 'Fine', ''], my.loans.map(l => [esc(l.title), l.due_on, l.returned_on || '—', '₹' + l.fine, l.returned_on ? '' : `<button onclick="act('return/${l.id}')">Return</button>`]));
+}
+async function librarian() {
+  const [books, st, stu, loans, logs] = await Promise.all(['books', 'stats', 'students', 'borrowals', 'logs'].map(x => api(x)));
+  $('#app').innerHTML = '<h2>Sections</h2>' + tbl(['Section', 'Titles', 'Total copies', 'Available', 'Borrowed'], st.map(s => [esc(s.section), s.titles, s.total, s.available, s.total - s.available])) +
+    '<h2>Add book</h2><div class="row"><input id="bt" placeholder="Title"><input id="ba" placeholder="Author"><input id="bs" placeholder="Section"><input id="bn" type="number" value="1" min="1" style="width:70px"><button onclick="addBook()">Add</button></div>' +
+    '<h2>Books</h2>' + tbl(['Title', 'Section', 'Available/Total', ''], books.map(b => [esc(b.title), esc(b.section), `${b.available}/${b.total}`, `<button class="del" onclick="del('books',${b.id})">Remove</button>`])) +
+    '<h2>Add student</h2><div class="row"><input id="sn" placeholder="Name"><input id="su" placeholder="Username"><input id="sp" type="password" placeholder="Password"><button onclick="addStu()">Add</button></div>' +
+    '<h2>Students</h2>' + tbl(['Name', 'Username', 'Points', ''], stu.map(s => [esc(s.name), esc(s.username), s.points, `<button class="del" onclick="del('students',${s.id})">Remove</button>`])) +
+    '<h2>Borrowals &amp; submissions</h2>' + tbl(['Student', 'Book', 'Borrowed', 'Due', 'Returned', 'Fine'], loans.map(l => [esc(l.student), esc(l.title), l.borrowed_on, l.due_on, l.returned_on || 'Not returned', '₹' + l.fine])) +
+    '<h2>Recent activity (MongoDB)</h2>' + tbl(['Time', 'Event', 'Details'], logs.map(l => [new Date(l.at).toLocaleString(), l.type, esc(JSON.stringify(l.detail))]));
+}
+function render() {
+  $('#out').hidden = !token; $('#who').textContent = user ? `${user.name} (${user.role})` : '';
+  if (!token) return $('#app').innerHTML = '<div class="card"><h2>Login</h2><div class="row"><input id="u" placeholder="Username"><input id="p" type="password" placeholder="Password"><button onclick="login()">Login</button></div></div>';
+  (user.role === 'student' ? student() : librarian()).catch(() => logout());
+}
+render();
+</script></body></html>
